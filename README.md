@@ -118,7 +118,9 @@ Open Millennium's settings in Steam and select **Rcheevo Bridge**:
 | Username / Web API key | Your RetroAchievements credentials. The key is checked against the API before it is saved. |
 | Show badge on loaded games | Off by default: the badge shows while a game loads and for shortcuts without achievements, then hides. Turn on to keep it visible with your progress. |
 
-<!-- Screenshot: plugin settings panel. docs/images/settings.png -->
+<p align="center">
+  <img src="docs/images/settings.png" alt="Rcheevo Bridge settings panel in Millennium with RetroAchievements status, username and Web API key fields, Save and Disconnect buttons, and the game page badge toggle" width="320">
+</p>
 
 ## Game page badge
 

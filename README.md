@@ -135,7 +135,16 @@ Open Millennium's settings in Steam and select **Rcheevo Bridge**:
 Network or credential problems never show a badge, so a temporary failure is not mistaken for a
 game without achievements. Badge texts are currently in Portuguese.
 
-<!-- Screenshot: badge states. docs/images/badges.png -->
+<table>
+  <tr>
+    <th width="50%">Game on RetroAchievements without achievements</th>
+    <th width="50%">Platform not supported by RetroAchievements</th>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/badge-no-achievements.png" alt="Game page badge reading NO RA, Sem conquistas, on a Ben 10: Alien Force shortcut" width="100%"></td>
+    <td width="50%"><img src="docs/images/badge-unsupported-platform.png" alt="Game page badge reading SEM SUPORTE, Console fora do RA, on a Nintendo Switch shortcut for The Legend of Zelda: Breath of the Wild" width="100%"></td>
+  </tr>
+</table>
 
 ## Troubleshooting
 

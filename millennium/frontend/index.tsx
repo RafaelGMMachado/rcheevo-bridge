@@ -28,7 +28,7 @@ import { readDeckyStorageText, writeDeckyStorageText } from "@platform/decky/sto
 
 // Off by default: once a game's achievements load, the native views show them and the badge
 // only repeats them. The badge still shows while loading and for shortcuts without achievements.
-const BADGE_SHOWS_LOADED_GAMES_STORAGE_KEY = "achievement-companion:millennium:badge-shows-loaded-games";
+const BADGE_SHOWS_LOADED_GAMES_STORAGE_KEY = "rcheevo-bridge:badge-shows-loaded-games";
 
 function readBadgeShowsLoadedGames(): boolean {
   return readDeckyStorageText(BADGE_SHOWS_LOADED_GAMES_STORAGE_KEY) === "true";

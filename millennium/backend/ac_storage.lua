@@ -14,10 +14,18 @@ local SENSITIVE_KEYS = {
   password = true, secret = true, authorization = true,
 }
 
+local SETTINGS_DIR_NAME = "rcheevo-bridge"
+-- Builds before the rename stored settings under Achievement Companion's id.
+local LEGACY_SETTINGS_DIR_NAME = "achievement-companion"
+
 local function settings_dir()
   local base = utils.getenv("APPDATA") or utils.getenv("LOCALAPPDATA") or fs.parent_path(utils.get_backend_path() or ".")
-  local dir = fs.join(base, "achievement-companion")
-  if not fs.exists(dir) then fs.create_directories(dir) end
+  local dir = fs.join(base, SETTINGS_DIR_NAME)
+  if not fs.exists(dir) then
+    local legacy = fs.join(base, LEGACY_SETTINGS_DIR_NAME)
+    -- Moving keeps the saved credentials; if it fails, start with an empty directory.
+    if not (fs.is_directory(legacy) and fs.rename(legacy, dir)) then fs.create_directories(dir) end
+  end
   return dir
 end
 

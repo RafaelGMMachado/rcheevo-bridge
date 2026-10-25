@@ -95,8 +95,7 @@ flowchart LR
 ### From a release
 
 1. Download the latest release from the [Releases](../../releases) page and extract it.
-2. Copy its `achievement-companion` folder to `C:\Program Files (x86)\Steam\millennium\plugins\`.
-   The folder keeps Achievement Companion's internal plugin id so existing settings carry over.
+2. Copy its `rcheevo-bridge` folder to `C:\Program Files (x86)\Steam\millennium\plugins\`.
 3. In Steam, enable **Rcheevo Bridge** in Millennium's plugin list.
 4. Close Steam with **Steam → Exit** and open it again (see
    [Troubleshooting](#troubleshooting) about Millennium's restart prompt).
@@ -106,7 +105,7 @@ flowchart LR
 See [Development](#development) to build, then copy the plugin from an elevated PowerShell:
 
 ```powershell
-robocopy millennium "C:\Program Files (x86)\Steam\millennium\plugins\achievement-companion" /E /XD frontend /XF *.pdb *.map
+robocopy millennium "C:\Program Files (x86)\Steam\millennium\plugins\rcheevo-bridge" /E /XD frontend /XF *.pdb *.map
 ```
 
 ## Configuration
@@ -167,11 +166,11 @@ are written by Steam to `Steam\logs\webhelper_js.txt`.
 ## Privacy
 
 - Rcheevo Bridge talks only to `retroachievements.org`.
-- Your Web API key is stored **unencrypted** in `%APPDATA%\achievement-companion\` (Millennium's
+- Your Web API key is stored **unencrypted** in `%APPDATA%\rcheevo-bridge\` (Millennium's
   Lua runtime has no encryption primitives) and is never sent to the Steam UI. Temporary request
   files that contain it are deleted right after each batch.
 - Cached RetroAchievements data (catalogues, community stats, other players' public profiles) is
-  stored in `%APPDATA%\achievement-companion\cache\`. Your own progress is never cached on disk.
+  stored in `%APPDATA%\rcheevo-bridge\cache\`. Your own progress is never cached on disk.
 - Rcheevo Bridge does not provide ROMs, BIOS files or other game content.
 
 ## Development

@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/SteamClientHomebrew/Millennium/main/src/sys/plugin-schema.json",
-  "name": "achievement-companion",
+  "name": "rcheevo-bridge",
   "common_name": "Rcheevo Bridge",
   "description": "RetroAchievements in Steam's native achievement views for non-Steam emulator shortcuts. Based on Achievement Companion.",
   "version": "0.1.0",

@@ -825,6 +825,22 @@ function useDeckyGamePageAchievementRouteBadgePlacement(): {
   };
 }
 
+type DeckyGamePageAchievementBadgeActivationHandler = (
+  appId: string | undefined,
+  summary: GamePageAchievementSummary | undefined,
+) => void;
+let badgeActivationOverride: DeckyGamePageAchievementBadgeActivationHandler | undefined;
+
+/**
+ * Replaces the badge's default action (opening the full-screen game view). Platforms without
+ * those full-screen routes, such as Millennium, provide their own handler.
+ */
+export function overrideDeckyGamePageAchievementBadgeActivation(
+  handler: DeckyGamePageAchievementBadgeActivationHandler | undefined,
+): void {
+  badgeActivationOverride = handler;
+}
+
 function useDeckyGamePageAchievementBadgeActivation(
   appId: string | undefined,
   summary: GamePageAchievementSummary | undefined,
@@ -837,6 +853,10 @@ function useDeckyGamePageAchievementBadgeActivation(
   );
 
   const onActivate = useCallback(() => {
+    if (badgeActivationOverride !== undefined) {
+      badgeActivationOverride(appId, summary);
+      return;
+    }
     const routeState = readDeckyGamePageAchievementRouteState();
     const sourceRoute = routeState.currentRouteUrl;
 
@@ -865,7 +885,7 @@ function useDeckyGamePageAchievementBadgeActivation(
         "game-page-badge:navigate",
       );
     }
-  }, [appId, navigationTarget]);
+  }, [appId, navigationTarget, summary]);
 
   return {
     onActivate,

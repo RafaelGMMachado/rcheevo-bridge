@@ -61,6 +61,8 @@ export interface NativeRetroAchievementsProjectionDependencies {
     options: { readonly forceRefresh: boolean },
   ) => Promise<ResourceState<GameDetailSnapshot>>;
   readonly invalidateSummary: (appId: string, options?: { readonly preserveVisible?: boolean }) => void;
+  /** Called once a projection is published and can be shown. */
+  readonly onPublished?: (projection: NativeRetroAchievementsProjection) => void;
 }
 
 export interface NativeRetroAchievementsProjectionLoader {
@@ -72,7 +74,13 @@ export interface NativeRetroAchievementsProjectionLoader {
   read(appId: string, mode: RetroAchievementsAchievementMode): NativeRetroAchievementsProjection | undefined;
   invalidate(appId?: string): void;
   dispose(): void;
+  /** Adds late community stats to published projections of a game; true when one changed. */
+  applyCommunityStats(raGameId: string, stats: GameCommunityStats): boolean;
 }
+
+// Community stats that arrived after their game detail (see deferDeckyRetroAchievementsCommunityStats).
+// Projections built later from that cached detail still pick them up.
+const lateCommunityStatsByGameId = new Map<string, GameCommunityStats>();
 
 function unavailable(
   appId: string,
@@ -135,6 +143,7 @@ function projectDetail(
   const developer = metric("developer");
   const publisher = metric("publisher");
   const genre = metric("genre");
+  const communityStats = detail.game.communityStats ?? lateCommunityStatsByGameId.get(raGameId);
 
   return {
     status: "ready",
@@ -153,7 +162,7 @@ function projectDetail(
     earned: achievements.filter((achievement) => achievement.isUnlocked).length,
     total: achievements.length,
     ...(totalPlayers !== undefined ? { totalPlayers } : {}),
-    ...(detail.game.communityStats !== undefined ? { communityStats: detail.game.communityStats } : {}),
+    ...(communityStats !== undefined ? { communityStats } : {}),
     ...(achievementsAvailableSince !== undefined ? { achievementsAvailableSince } : {}),
     ...(detail.refreshedAt !== undefined ? { refreshedAt: detail.refreshedAt } : {}),
   };
@@ -301,6 +310,7 @@ export function createNativeRetroAchievementsProjectionLoader(
 
       committed.set(appId, result);
       needsFreshDetail.delete(appId);
+      dependencies.onPublished?.(result);
       if (options?.forceRefresh === true) {
         // Badge resolution may have read the previous detail while this request was loading.
         dependencies.invalidateSummary(appId, { preserveVisible: true });
@@ -345,18 +355,53 @@ export function createNativeRetroAchievementsProjectionLoader(
     needsFreshDetail.clear();
   }
 
-  return { load, read, invalidate, dispose };
+  function applyCommunityStats(raGameId: string, stats: GameCommunityStats): boolean {
+    let changed = false;
+    for (const [appId, projection] of committed) {
+      if (projection.raGameId !== raGameId || projection.communityStats === stats) continue;
+      committed.set(appId, { ...projection, communityStats: stats });
+      changed = true;
+    }
+    return changed;
+  }
+
+  return { load, read, invalidate, dispose, applyCommunityStats };
 }
+
+const RECENT_DETAIL_REUSE_MS = 15_000;
 
 const deckyDependencies: NativeRetroAchievementsProjectionDependencies = {
   loadShortcutMetadata: loadDeckySteamShortcutMetadata,
   loadSummary: loadDeckyGamePageAchievementSummary,
   async loadDetail(raGameId, options) {
     const { loadDeckyGameDetailState } = await import("./decky-app-services");
+    if (options.forceRefresh) {
+      // A page visit forces a refresh, but resolving the shortcut moments earlier already
+      // fetched this game's progress; reusing it spares a duplicate request on every visit.
+      const cached = await loadDeckyGameDetailState(RETROACHIEVEMENTS_PROVIDER_ID, raGameId, { forceRefresh: false });
+      if (
+        cached.status === "success" &&
+        !cached.isStale &&
+        cached.lastUpdatedAt !== undefined &&
+        Date.now() - cached.lastUpdatedAt < RECENT_DETAIL_REUSE_MS
+      ) {
+        return cached;
+      }
+    }
     return loadDeckyGameDetailState(RETROACHIEVEMENTS_PROVIDER_ID, raGameId, options);
   },
   invalidateSummary: invalidateDeckyGamePageAchievementSummaryCache,
+  onPublished: (projection) => projectionPublishedListener?.(projection.raGameId),
 };
+
+let projectionPublishedListener: ((raGameId: string) => void) | undefined;
+
+/** Notifies when a game's achievements are ready to show, e.g. to start deferred loads after them. */
+export function setDeckyNativeRetroAchievementsProjectionPublishedListener(
+  listener: ((raGameId: string) => void) | undefined,
+): void {
+  projectionPublishedListener = listener;
+}
 
 let deckyNativeRetroAchievementsProjectionLoader = createNativeRetroAchievementsProjectionLoader(deckyDependencies);
 
@@ -382,4 +427,10 @@ export function invalidateDeckyNativeRetroAchievementsProjection(appId?: string)
 export function disposeDeckyNativeRetroAchievementsProjection(): void {
   deckyNativeRetroAchievementsProjectionLoader.dispose();
   deckyNativeRetroAchievementsProjectionLoader = createNativeRetroAchievementsProjectionLoader(deckyDependencies);
+}
+
+/** Records community stats that arrived after their game detail; true when a visible projection changed. */
+export function applyDeckyNativeRetroAchievementsCommunityStats(raGameId: string, stats: GameCommunityStats): boolean {
+  lateCommunityStatsByGameId.set(raGameId, stats);
+  return deckyNativeRetroAchievementsProjectionLoader.applyCommunityStats(raGameId, stats);
 }

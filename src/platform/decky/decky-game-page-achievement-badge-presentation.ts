@@ -5,7 +5,9 @@ export type DeckyGamePageAchievementBadgeVariant =
   | "beaten"
   | "mastered"
   | "in-progress"
-  | "loading";
+  | "loading"
+  /** A shortcut that resolved to no achievements (unsupported platform, unknown ROM, ...). */
+  | "unavailable";
 
 export type DeckyGamePageAchievementBadgeProvider = "steam" | "retroachievements";
 
@@ -13,9 +15,45 @@ export interface DeckyGamePageAchievementBadgePresentation {
   readonly ariaLabel: string;
   readonly provider?: DeckyGamePageAchievementBadgeProvider;
   readonly variant: DeckyGamePageAchievementBadgeVariant;
-  readonly statusLabel: "PERFECTED" | "BEATEN" | "MASTERED" | "IN PROGRESS" | "PLEASE WAIT...";
+  /** Fixed English labels, or a platform-provided title for the unavailable variant. */
+  readonly statusLabel: string;
   readonly countLabel: string;
   readonly progress: number;
+}
+
+export interface DeckyGamePageAchievementBadgeUnavailableLabel {
+  /** First line, short and upper case to match the other badge states. */
+  readonly title: string;
+  /** Second line, in place of the achievement count. */
+  readonly detail: string;
+}
+
+type UnavailableLabelResolver = (reason: string) => DeckyGamePageAchievementBadgeUnavailableLabel | undefined;
+let unavailableLabelResolver: UnavailableLabelResolver | undefined;
+
+/**
+ * Lets a platform show the badge for unavailable summaries, labelled by reason code. Without a
+ * resolver (Decky's default) those summaries keep hiding the badge.
+ */
+export function setDeckyGamePageAchievementBadgeUnavailableLabels(resolver: UnavailableLabelResolver | undefined): void {
+  unavailableLabelResolver = resolver;
+}
+
+export function resolveDeckyGamePageAchievementBadgeUnavailableLabel(
+  reason: string,
+): DeckyGamePageAchievementBadgeUnavailableLabel | undefined {
+  return unavailableLabelResolver?.(reason);
+}
+
+let showsLoadedGames = true;
+
+/** Whether the badge stays visible once a game's achievements have loaded (Decky's default). */
+export function setDeckyGamePageAchievementBadgeShowsLoadedGames(show: boolean): void {
+  showsLoadedGames = show;
+}
+
+export function deckyGamePageAchievementBadgeShowsLoadedGames(): boolean {
+  return showsLoadedGames;
 }
 
 function clampProgress(value: number): number {
@@ -36,7 +74,20 @@ export function resolveDeckyGamePageAchievementBadgePresentation(
     };
   }
 
-  if (summary.status !== "ready") {
+  if (summary.status === "unavailable") {
+    const label = resolveDeckyGamePageAchievementBadgeUnavailableLabel(summary.reason);
+    if (label === undefined) return undefined;
+    return {
+      ariaLabel: `Achievement Companion, ${label.title}, ${label.detail}`,
+      provider: "retroachievements",
+      variant: "unavailable",
+      statusLabel: label.title,
+      countLabel: label.detail,
+      progress: 0,
+    };
+  }
+
+  if (summary.status !== "ready" || !showsLoadedGames) {
     return undefined;
   }
 

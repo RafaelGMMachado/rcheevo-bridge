@@ -1,214 +1,223 @@
-# Achievement Companion
+# Rcheevo Bridge
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Steam%20Deck-Game%20Mode-1b6ac9?logo=steamdeck&logoColor=white" alt="Steam Deck and SteamOS Game Mode">
-  <img src="https://img.shields.io/badge/Decky%20Loader-plugin-7357ff" alt="Decky Loader plugin">
-  <img src="https://img.shields.io/badge/RetroAchievements-supported-ef7d00" alt="RetroAchievements supported">
-  <img src="https://img.shields.io/badge/Steam-achievements-171a21?logo=steam" alt="Steam achievements">
-</p>
+**RetroAchievements inside Steam's native achievement views, for your emulator shortcuts.**
 
-<p align="center">
-  <a href="https://ko-fi.com/parvagans">
-    <img src="https://img.shields.io/badge/Ko--fi-Support%20development-FF5E5B?style=for-the-badge&logo=kofi&logoColor=white" alt="Support Achievement Companion development on Ko-fi">
-  </a>
-</p>
+[![License: BSD-3-Clause](https://img.shields.io/badge/license-BSD--3--Clause-blue.svg)](LICENSE)
+![Platform: Windows](https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4)
+![Requires: Millennium 3.x](https://img.shields.io/badge/requires-Millennium%203.x-7357ff)
+![Status: early](https://img.shields.io/badge/status-early-orange)
 
-<p align="center">
-  <strong>Your retro milestones. Your Steam completions. All in Game Mode.</strong>
-</p>
+Rcheevo Bridge is a [Millennium](https://steambrew.app) plugin for the Steam desktop client on
+Windows. When a non-Steam shortcut launches a ROM that [RetroAchievements](https://retroachievements.org)
+recognizes, the game's achievements, unlock history and community stats show up in Steam's own
+**Achievements**, **Activity** and **Community** views, as if it were a Steam game.
 
-<p align="center">
-  <a href="#installation"><strong>Install Achievement Companion</strong></a>
-  ·
-  <a href="https://github.com/parvagans/achievement-companion/releases/latest">Latest GitHub release</a>
-</p>
+> **Based on [Achievement Companion](https://github.com/parvagans/achievement-companion)** by
+> parvagans, a Decky Loader plugin for Steam Deck. Rcheevo Bridge is a port of its
+> native-Steam-view integration to Millennium on Windows; see [Credits](#credits).
+> It is an independent project, not affiliated with RetroAchievements, Valve or Millennium.
 
-Achievement Companion brings RetroAchievements and Steam achievement tracking to Steam Deck and compatible SteamOS devices through Decky Loader. Check your next unlock in Quick Access, explore your collection in full-screen dashboards, and see completion badges on library game pages.
+<!-- Screenshot (hero): Steam achievements tab of a non-Steam shortcut showing RetroAchievements.
+     docs/images/achievements.png -->
 
-The project is undergoing active, rigorous development with frequent updates. If you find a problem or have an idea, please [open a GitHub issue](https://github.com/parvagans/achievement-companion/issues). Never include an API key in an issue.
+## Contents
 
-<p align="center">
-  <img src="docs/screenshots/readme/achievement-companion-hero.png" alt="Achievement Companion's RetroAchievements overview in Steam Deck Game Mode" width="100%">
-</p>
+- [Features](#features)
+- [How it works](#how-it-works)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Game page badge](#game-page-badge)
+- [Troubleshooting](#troubleshooting)
+- [Known limitations](#known-limitations)
+- [Privacy](#privacy)
+- [Development](#development)
+- [Project structure](#project-structure)
+- [Credits](#credits)
+- [License](#license)
 
-## Highlights
+## Features
 
-- **Quick Access and full-screen views:** controller-friendly profiles, searchable game lists, completion progress, activity calendars, and achievement details.
-- **RetroAchievements inside Steam:** supported non-Steam games can show RetroAchievements in Steam's native Activity, Your Stuff, and Community views.
-- **Steam completion insights:** SteamHunters community data adds rarity, completion times, DLC requirements, achievement groups, and obtainability information where available.
-- **Optional SteamHunters personal data:** personal SteamHunters profile statistics can be disabled without turning off community statistics. If a profile is unavailable, Achievement Companion uses meaningful Steam library data where possible and otherwise hides the section.
-- **Library game-page badges:** see In Progress, Steam Perfected, or RetroAchievements Beaten and Mastered status before launching a game, with configurable Small, Medium, and Large layouts.
-- **Fifteen visual themes:** choose Arcade, Aurora, Blue (default), Carbon, Ember, Grove, Neon, Onyx, Paper, RA Classic, Rosewood, Solarized, Steam, Terminal, or Velvet in **Quick Access → Plugin Settings → Theme Settings**. The selected palette also carries through shared icons, progress, focus, footer, and provider loading screens; achievement and award status colors keep their meaning.
-- **Built-in updates:** verified downloads are presented through Decky for confirmation rather than installed unattended.
+- **Native Steam views.** RetroAchievements appear in Steam's own Achievements list, the
+  Activity feed and the Community section of a shortcut's game page, with icons, descriptions,
+  unlock times and global unlock rates.
+- **Identification by ROM hash, never by title.** ROMs are hashed with
+  [rcheevos](https://github.com/RetroAchievements/rcheevos), the same rules RetroAchievements
+  emulators use, so a renamed shortcut still matches and a wrong revision is not guessed.
+- **Works with EmuDeck for Windows and Steam ROM Manager** shortcuts, including EmuDeck's
+  PowerShell launcher command lines.
+- **Fast after the first visit.** Shortcut identities are remembered, catalogue and community data
+  are cached on disk, and a game's achievements are shown before its community stats finish
+  loading.
+- **Background pre-identification.** Shortly after Steam starts, every shortcut is identified in
+  the background so first visits do not wait for the console catalogue.
+- **Game page badge** that explains shortcuts without achievements (platform or game not on
+  RetroAchievements, game without achievements yet, ROM not found) and shows loading progress.
 
-RetroAchievements and Steam retain their own progression rules: RA Hardcore and Softcore, Beaten and Mastered, and Steam Perfected all keep their meaning.
+## How it works
 
-The theme choice applies to shared Quick Access and full-screen surfaces, controls, focus states, activity charts, and calendars. RetroAchievements awards (including silver Beaten and gold Mastered), Steam unlock states, the separately configured game-page badge, and Steam's native game-page tabs keep their own semantics. Blue remains the default for existing installs; saved Neon selections retain the original Neon palette while Arcade is a separate choice.
+```mermaid
+flowchart LR
+    page["Steam game page<br/>(non-Steam shortcut)"] --> fe["Frontend<br/>(TypeScript, runs inside Steam)"]
+    fe -- "Millennium IPC" --> be["Backend<br/>(Lua)"]
+    be --> vdf["shortcuts.vdf<br/>platform + ROM path"]
+    be --> hash["ac-rhash.exe<br/>rcheevos ROM hash"]
+    be -- "curl.exe, parallel" --> ra["RetroAchievements<br/>Web API"]
+    fe --> stores["Steam's achievement stores<br/>(patched in memory)"]
+    stores --> page
+```
 
-## RetroAchievements inside Steam
-
-For a non-Steam shortcut that Achievement Companion can confidently match to a RetroAchievements game:
-
-- **Your Stuff → Achievements** shows badge artwork, descriptions, progress, locked and unlocked states, and unlock times or global rates when RetroAchievements provides them.
-- **Activity** groups dated unlocks by day in Steam's native layout. Tiles include the exact unlock time and Hardcore or Softcore mode, and open the native Your Stuff achievement list.
-- **Community → Playtime Stats** shows RA community milestones and sampled median times using Steam's native game-page section layout. Its Casual/Hardcore control is independent of the saved achievement-mode setting: Hardcore shows Beat and Mastered statistics, while Casual shows Beat and Completed statistics. A matching-height **Latest Masters** list shows the ten most recent RA mastery entries, including profile artwork, ranks, and dates, in an independently scrollable right column. Rows stay on the game page instead of opening a browser. The RA v1 game-specific endpoint currently provides up to ten entries; additional entries require an accessible paginated endpoint. Unsupported values are omitted rather than estimated, and missing profile artwork falls back to initials without hiding the master.
-
-Steam ROM Manager and EmuDeck shortcuts are identified through accepted RetroAchievements ROM hashes rather than shortcut names. Supported formats include direct ROMs, ZIP archives, M3U playlists, raw disc images, PSP/PS2 CSO and ZSO images, CHD CD/DVD images, and GameCube/Wii formats such as RVZ, WIA, GCZ, Nintendo CISO, and WBFS. Compressed disc containers are read directly without extracting temporary ISO files. M3U follows RetroAchievements' first-disc identification policy and can point to supported raw, CHD, or Nintendo disc media. Unsupported, ambiguous, or unrecognized revisions remain unmatched instead of being guessed from their titles.
-
-<table>
-  <tr>
-    <th width="33%">Native Activity</th>
-    <th width="33%">Your Stuff / Achievements</th>
-    <th width="34%">Community / Playtime Stats</th>
-  </tr>
-  <tr>
-    <td width="33%"><img src="docs/screenshots/readme/ra-native-steam-activity.png" alt="RetroAchievements shown in Steam's native Activity interface" width="100%"></td>
-    <td width="33%"><img src="docs/screenshots/readme/ra-native-steam-achievements.png" alt="RetroAchievements shown in Steam's native Your Stuff Achievements interface" width="100%"></td>
-    <td width="34%"><img src="docs/screenshots/readme/ra-native-steam-community.png" alt="RetroAchievements Playtime Stats and Latest Masters shown in Steam's native Community interface" width="100%"></td>
-  </tr>
-</table>
-
-## See it in action
-
-### Provider profiles
-
-<table>
-  <tr>
-    <th width="50%">RetroAchievements</th>
-    <th width="50%">Steam</th>
-  </tr>
-  <tr>
-    <td width="50%"><img src="docs/screenshots/readme/ra-fullscreen-profile.png" alt="RetroAchievements full-screen profile dashboard" width="100%"></td>
-    <td width="50%"><img src="docs/screenshots/readme/steam-fullscreen-profile.png" alt="Steam full-screen profile dashboard" width="100%"></td>
-  </tr>
-</table>
-
-### Games, Activity, and Analytics
-
-Both providers include Analytics alongside Activity; use LT/RT to switch between them.
-
-<table>
-  <tr>
-    <th width="50%">RetroAchievements Games</th>
-    <th width="50%">RetroAchievements Activity</th>
-  </tr>
-  <tr>
-    <td width="50%"><img src="docs/screenshots/readme/ra-fullscreen-games.png" alt="RetroAchievements full-screen Games view" width="100%"></td>
-    <td width="50%"><img src="docs/screenshots/readme/ra-fullscreen-activity.png" alt="RetroAchievements full-screen Activity view" width="100%"></td>
-  </tr>
-  <tr>
-    <th width="50%">Steam Games</th>
-    <th width="50%">Steam Activity</th>
-  </tr>
-  <tr>
-    <td width="50%"><img src="docs/screenshots/readme/steam-fullscreen-games.png" alt="Steam full-screen Games view" width="100%"></td>
-    <td width="50%"><img src="docs/screenshots/readme/steam-fullscreen-activity.png" alt="Steam full-screen Activity view" width="100%"></td>
-
-  </tr>
-  <tr>
-    <th width="50%">RetroAchievements Analytics</th>
-    <th width="50%">Steam Analytics</th>
-  </tr>
-  <tr>
-    <td width="50%"><img src="docs/screenshots/readme/ra-fullscreen-analytics.png" alt="RetroAchievements full-screen Analytics view with unlock insights, trends, and calendar" width="100%"></td>
-    <td width="50%"><img src="docs/screenshots/readme/steam-fullscreen-analytics.png" alt="Steam full-screen Analytics view with unlock insights, trends, and calendar" width="100%"></td>
-  </tr>
-</table>
-
-### Full-screen game pages
-
-Steam game pages include achievements, DLC groups, and community insights. RetroAchievements game pages keep Hardcore and Softcore progress distinct and include supported subsets.
-
-<table>
-  <tr>
-    <th width="50%">Steam Overview</th>
-    <th width="50%">Steam Achievements</th>
-  </tr>
-  <tr>
-    <td width="50%"><img src="docs/screenshots/readme/steam-fullscreen-game-overview-tab.png" alt="Steam full-screen game overview tab" width="100%"></td>
-    <td width="50%"><img src="docs/screenshots/readme/steam-fullscreen-game-achievements-tab.png" alt="Steam full-screen game achievements tab" width="100%"></td>
-  </tr>
-  <tr>
-    <th width="50%">Steam DLC</th>
-    <th width="50%">Steam Community</th>
-  </tr>
-  <tr>
-    <td width="50%"><img src="docs/screenshots/readme/steam-fullscreen-game-dlc-tab.png" alt="Steam full-screen game DLC tab" width="100%"></td>
-    <td width="50%"><img src="docs/screenshots/readme/steam-fullscreen-game-community-tab.png" alt="Steam full-screen game community tab" width="100%"></td>
-  </tr>
-  <tr>
-    <th width="50%">RetroAchievements Overview</th>
-    <th width="50%">RetroAchievements Achievements</th>
-  </tr>
-  <tr>
-    <td width="50%"><img src="docs/screenshots/readme/ra-fullscreen-game-overview-tab.png" alt="RetroAchievements full-screen game overview tab" width="100%"></td>
-    <td width="50%"><img src="docs/screenshots/readme/ra-fullscreen-game-achievements-tab.png" alt="RetroAchievements full-screen game achievements tab" width="100%"></td>
-  </tr>
-</table>
-
-### Native game-page status badges
-
-The clickable badge opens the corresponding Achievement Companion detail view. It supports In Progress for both providers, Steam Perfected, and RetroAchievements Beaten or Mastered. Choose a Small, Medium, or Large layout, place it in any of six positions, or set a separate color for each status. Fresh installations use Small; settings saved before badge sizes were introduced retain the original Large layout. Default badge colors are Perfected Purple, Mastered Gold, Beaten Blue, and In Progress Gray. Unresolved non-Steam games do not receive a badge.
-
-<p align="center">
-  <img src="docs/screenshots/readme/game-page-status-badges.png" alt="Small, Medium, and Large Steam Game Mode badges for RetroAchievements Mastered, Beaten, and In Progress; Steam Perfected and In Progress; and loading" width="100%">
-</p>
+1. **Detect the shortcut.** When a game page opens, the frontend asks the backend for the
+   shortcut's entry in Steam's `shortcuts.vdf`: its Steam category (for example
+   `Sony Playstation 2`) gives the RetroAchievements console, and its launch command gives the ROM
+   path.
+2. **Hash the ROM.** The backend runs the bundled `ac-rhash.exe`, which applies the console's
+   rcheevos hashing rules (cartridge ROMs, ISO, CHD, CSO/ZSO, M3U playlists).
+3. **Find the game.** The hash is looked up in the console's RetroAchievements catalogue. The
+   answer is remembered, so later visits skip this step.
+4. **Load progress.** Your progress for that game comes from the RetroAchievements Web API, with
+   your API key added by the backend.
+5. **Show it natively.** The frontend patches Steam's in-memory achievement stores for that
+   shortcut, so Steam renders the achievements with its own components. Community stats arrive
+   afterwards and fill the Community section in place.
 
 ## Requirements
 
-- Steam Deck, Steam Machine, or compatible SteamOS device running Game Mode.
-- [Decky Loader](https://decky.xyz/).
-- A RetroAchievements account and Web API key for RetroAchievements features.
-- A Steam Web API key for Steam features. The signed-in account is detected when possible, with SteamID64 available as a fallback.
+- Windows 10 version 1803 or later, or Windows 11 (the backend uses the bundled `curl.exe`).
+- Steam with [Millennium](https://steambrew.app) 3.x.
+- A [RetroAchievements](https://retroachievements.org) account and its **Web API key**
+  (retroachievements.org → *Settings* → *Keys*).
+- Non-Steam shortcuts whose Steam category names the platform, as EmuDeck and Steam ROM Manager
+  create them.
 
 ## Installation
 
-### Decky Extended Plugins
+### From a release
 
-Achievement Companion is available from [Decky Extended Plugins](https://decky-extended-plugins.beallio.com/). If that source is already configured in your Decky Loader, find Achievement Companion there and install it through Decky.
+1. Download the latest release from the [Releases](../../releases) page and extract it.
+2. Copy its `achievement-companion` folder to `C:\Program Files (x86)\Steam\millennium\plugins\`.
+   The folder keeps Achievement Companion's internal plugin id so existing settings carry over.
+3. In Steam, enable **Rcheevo Bridge** in Millennium's plugin list.
+4. Close Steam with **Steam → Exit** and open it again (see
+   [Troubleshooting](#troubleshooting) about Millennium's restart prompt).
 
-### Manual first-time installation
+### From source
 
-If Decky Extended Plugins is not configured, install Achievement Companion manually the first time:
+See [Development](#development) to build, then copy the plugin from an elevated PowerShell:
 
-1. Download the release ZIP from [GitHub Releases](https://github.com/parvagans/achievement-companion/releases/latest).
-2. In Game Mode, open Decky Loader settings and enable **Developer Mode** under **General → Other**.
-3. Open the **Developer** tab and choose **Browse for ZIP file** to select the downloaded ZIP, or choose **Install from URL** and enter the direct release ZIP URL.
-4. Install the plugin, restart the Deck if needed, and open Achievement Companion from Decky.
-5. Connect RetroAchievements and/or Steam from the provider setup screens.
+```powershell
+robocopy millennium "C:\Program Files (x86)\Steam\millennium\plugins\achievement-companion" /E /XD frontend /XF *.pdb *.map
+```
 
-For RetroAchievements, enter your username and the Web API key from **Settings → Authentication**. For Steam, enter a Web API key; if the signed-in account is not detected automatically, enter its SteamID64.
+## Configuration
 
-## Updates
+Open Millennium's settings in Steam and select **Rcheevo Bridge**:
 
-After first-time installation, automatic update checks run when the previous check is at least 24 hours old and when the Deck reconnects to the internet. You can also check on demand from **Settings → About**. Downloads are verified before Decky asks you to confirm installation; updates are never installed unattended.
+| Setting | Description |
+|---|---|
+| Username / Web API key | Your RetroAchievements credentials. The key is checked against the API before it is saved. |
+| Show badge on loaded games | Off by default: the badge shows while a game loads and for shortcuts without achievements, then hides. Turn on to keep it visible with your progress. |
+
+<!-- Screenshot: plugin settings panel. docs/images/settings.png -->
+
+## Game page badge
+
+| Badge | Meaning |
+|---|---|
+| *loading ring* | The shortcut is being identified or its progress is loading. |
+| **SEM SUPORTE** · Jogo fora do RA | The ROM hash is not in RetroAchievements. |
+| **NO RA** · Sem conquistas | The game exists on RetroAchievements but has no achievements yet. |
+| **SEM SUPORTE** · Console fora do RA | RetroAchievements does not support the platform (e.g. Nintendo Switch). |
+| **ROM** · Não encontrada | The ROM path in the shortcut could not be read. |
+| **ROM** · ZIP não suportado | ROMs inside `.zip` archives are not hashed yet. |
+| **ROM** · Não identificada | The ROM could not be hashed or matched unambiguously. |
+
+Network or credential problems never show a badge, so a temporary failure is not mistaken for a
+game without achievements. Badge texts are currently in Portuguese.
+
+<!-- Screenshot: badge states. docs/images/badges.png -->
+
+## Troubleshooting
+
+**Achievements take ~4 s longer with other plugins enabled.** Millennium delivers backend calls
+for all plugins through one channel. Plugins that make slow requests when a game page opens (for
+example *HLTB for Steam*, which searches HowLongToBeat by title) delay Rcheevo Bridge's calls
+until they finish. Disable such plugins if the delay matters to you.
+
+**Steam has no window after enabling the plugin.** Restarting through Millennium's prompt has left
+Steam running without a window. End `steam.exe`, `steamwebhelper.exe` and
+`millennium.luavm64.exe` in Task Manager and start Steam again; prefer **Steam → Exit** to restart.
+
+**A game shows "SEM SUPORTE · Jogo fora do RA" but it is on RetroAchievements.** Rcheevo Bridge
+only matches ROMs whose hash RetroAchievements lists for the game. Check the game's *Supported
+Game Files* on retroachievements.org; a different revision or a patched dump will not match.
+
+**Logs.** Backend messages appear in Millennium's log viewer under the plugin. Frontend messages
+are written by Steam to `Steam\logs\webhelper_js.txt`.
+
+## Known limitations
+
+- Windows only.
+- ROMs inside `.zip` archives, and compressed GameCube/Wii images (RVZ, WIA, GCZ, WBFS), are not
+  hashed. Plain ISO images work.
+- ROM paths with non-ASCII characters may fail to hash.
+- Clicking the game page badge does nothing yet.
+- Badge texts are in Portuguese only.
 
 ## Privacy
 
-Provider requests go directly to the services used by enabled features: RetroAchievements, Steam, GitHub Releases for update checks, and SteamHunters. Achievement Companion does not require a separate project server. API keys are handled by Decky's backend rather than browser storage, and logs redact secret-like values.
-
-SteamHunters personal profile data is optional and can be disabled under **Steam Settings → SteamHunters**. This does not disable SteamHunters community data used for game and achievement insights.
-
-Local secret protection cannot protect against a compromised device. Rotate a key at its provider if you believe the Deck itself has been compromised.
+- Rcheevo Bridge talks only to `retroachievements.org`.
+- Your Web API key is stored **unencrypted** in `%APPDATA%\achievement-companion\` (Millennium's
+  Lua runtime has no encryption primitives) and is never sent to the Steam UI. Temporary request
+  files that contain it are deleted right after each batch.
+- Cached RetroAchievements data (catalogues, community stats, other players' public profiles) is
+  stored in `%APPDATA%\achievement-companion\cache\`. Your own progress is never cached on disk.
+- Rcheevo Bridge does not provide ROMs, BIOS files or other game content.
 
 ## Development
 
-The project uses AI tools for code generation and review, debugging, refactoring, documentation, research, and solution exploration. AI-assisted contributions are reviewed, adjusted where necessary, and tested before being incorporated. Project design, maintenance, testing, and direction remain the maintainer's responsibility.
+Requirements: [Node.js](https://nodejs.org) with [pnpm](https://pnpm.io), Git, and
+[Zig](https://ziglang.org) (as a C compiler for the ROM hash helper).
 
-Achievement Companion is an independent community project and is not affiliated with RetroAchievements, Decky, Valve, or Steam. It does not provide games, ROMs, or BIOS files, unlock achievements, or modify games.
+```powershell
+pnpm install
+pnpm run build          # frontend bundle → millennium/.millennium/Dist/index.js
+pnpm run build:ra-hash  # ROM hash helper → millennium/bin/ac-rhash.exe
+pnpm run typecheck
+pnpm test
+```
 
-## Support Achievement Companion
+The Lua backend in `millennium/backend/` needs no build step; it runs on Millennium's Lua runtime
+with its `http`, `fs`, `json` and `utils` modules.
 
-Contributions through Ko-fi help cover development and maintenance. Financial support is optional; starring the [GitHub project](https://github.com/parvagans/achievement-companion), sharing feedback, and reporting bugs also help.
+## Project structure
 
-<p align="center">
-  <a href="https://ko-fi.com/parvagans">
-    <img src="https://img.shields.io/badge/Ko--fi-Support%20development-FF5E5B?style=for-the-badge&logo=kofi&logoColor=white" alt="Support Achievement Companion development on Ko-fi">
-  </a>
-  <br>
-  <a href="https://ko-fi.com/parvagans"><strong>Contribute to development on Ko-fi →</strong></a>
-</p>
+| Path | Contents |
+|---|---|
+| `millennium/plugin.json` | Millennium plugin manifest. |
+| `millennium/frontend/` | Plugin entry point, settings panel, and the compatibility layer that runs the inherited UI code on `@steambrew/client`. |
+| `millennium/backend/` | Lua backend: credentials, RetroAchievements requests (disk-cached, fetched in parallel), shortcut parsing and ROM hashing. |
+| `src/` | TypeScript inherited from Achievement Companion: RetroAchievements provider, native Steam view integration, game page badge. |
+| `native/ra_hash/` | C helper that hashes ROMs with rcheevos. `windows/` stubs the GameCube/Wii disc library. |
+| `scripts/` | Windows helper build, post-build asset inlining, test runner. |
+| `tests/` | Node test suite for the inherited TypeScript code. |
 
-## License and notices
+## Credits
 
-Achievement Companion is released under the [BSD-3-Clause License](LICENSE). Third-party dependency notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+- **[Achievement Companion](https://github.com/parvagans/achievement-companion)** by parvagans:
+  the RetroAchievements provider, ROM identification pipeline, native Steam view integration and
+  badge that Rcheevo Bridge is built on. If you use a Steam Deck, use Achievement Companion.
+- **[RetroAchievements](https://retroachievements.org)** and
+  **[rcheevos](https://github.com/RetroAchievements/rcheevos)** for the achievement data and ROM
+  hashing rules.
+- **[Millennium](https://steambrew.app)** for the Steam client plugin runtime.
+- [libchdr](https://github.com/rtissera/libchdr) and [lz4](https://github.com/lz4/lz4), linked
+  into the ROM hash helper.
+
+## License
+
+[BSD 3-Clause](LICENSE), as Achievement Companion. Third-party notices are in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [`licenses/`](licenses/).
+
+RetroAchievements is a trademark of its respective owner; Steam is a trademark of Valve
+Corporation. Rcheevo Bridge is not affiliated with or endorsed by either.

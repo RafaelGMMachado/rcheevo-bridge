@@ -1,5 +1,24 @@
 # Third-Party Notices
 
+## Rcheevo Bridge
+
+Rcheevo Bridge is derived from [Achievement Companion](https://github.com/parvagans/achievement-companion)
+and keeps its notices below. Differences in what this fork distributes:
+
+- The ROM hash helper is built for Windows as `millennium/bin/ac-rhash.exe` by
+  `scripts/build-ra-hash-windows.ps1`. It links `rcheevos`, `libchdr` and `lz4` at the revisions
+  listed below, but **not** `nod` / `nod-ffi`: `native/ra_hash/windows/nod.h` replaces it, so the
+  `nod` notices below do not apply to the Windows helper.
+- The Millennium frontend bundle runs on `@steambrew/client`, which Millennium provides at runtime;
+  it is not bundled.
+- Rcheevo Bridge is not affiliated with, endorsed by, sponsored by, or approved by RetroAchievements,
+  Valve Corporation, the Millennium project, or the authors of Achievement Companion.
+
+The original notices follow; references to Achievement Companion apply to the code Rcheevo Bridge
+inherits from it.
+
+---
+
 This file identifies third-party components relevant to Achievement Companion's source and distributed artifacts. Applicable native license texts and generated dependency notices are packaged in `licenses/`.
 
 ## Branding / Trademark Notices

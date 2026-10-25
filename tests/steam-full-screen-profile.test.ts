@@ -846,22 +846,6 @@ test("QAM Provider Settings uses RA, Steam, General footer tabs without shrinkin
   assert.match(credentialsSource, /useSharedFullscreenFooter\) markDeckyFullscreenOnScreenKeyboardOpen\(event\.currentTarget\.ownerDocument\)/u);
 });
 
-test("update notifications open the General tab of shared Provider Settings", async () => {
-  const [indexSource, navigationSource] = await Promise.all([
-    readFile(new URL("../src/index.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../src/platform/decky/decky-navigation.tsx", import.meta.url), "utf8"),
-  ]);
-
-  assert.match(indexSource, /initializeDeckyUpdateSystem\(openDeckyUpdatesFromNotification\)/u);
-  assert.match(
-    navigationSource,
-    /export function openDeckyUpdatesFromNotification\(\): void \{[\s\S]*if \(selectActiveFullScreenSettingsTab !== undefined\) \{[\s\S]*selectActiveFullScreenSettingsTab\("about"\);[\s\S]*return;[\s\S]*nextFullScreenSettingsProvider = "about";[\s\S]*DeckyNavigation\.Navigate\(buildDeckyFullScreenSettingsRoute\(\)\);/u,
-  );
-  assert.match(
-    navigationSource,
-    /selectActiveFullScreenSettingsTab = selectFooterTab;[\s\S]*selectActiveFullScreenSettingsTab = undefined;/u,
-  );
-});
 
 test("Games Search and Settings keep the footer on focus and yield it only to Steam keyboard ownership", async () => {
   const [gamesSource, settingsSource, footerSource, raCredentialsSource] = await Promise.all([

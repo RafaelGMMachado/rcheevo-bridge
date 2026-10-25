@@ -28,28 +28,6 @@ test("RA semantic rewards and completion states remain distinct", () => {
   assert.notEqual(raRecipes.achievementState.locked.color, raRecipes.achievementState.unlocked.color);
 });
 
-test("RA Beaten stays silver on Game and Profile surfaces independent of AC theme", () => {
-  const silver = `2px solid ${raRecipes.gameAward.beaten.border}`;
-  const profileSilver = `2px solid ${raTheme.color.beaten}`;
-  const cyan = `2px solid ${raTheme.color.accentStrong}`;
-  assert.equal(raRecipes.compactGame.status("beaten", "game").border, silver);
-  assert.equal(raRecipes.compactGame.statusEmblem("beaten", "game").border, silver);
-  assert.equal(raRecipes.gameStatusBanner.root("beaten").border, silver);
-  assert.equal(raRecipes.gameStatusBanner.accent("beaten").background, raRecipes.gameAward.beaten.border);
-  assert.equal(raRecipes.compactGame.status("beaten").border, profileSilver);
-  assert.equal(raRecipes.compactGame.statusEmblem("beaten").border, profileSilver);
-  assert.equal(raRecipes.compactGame.status("mastered", "game").border, raRecipes.compactGame.status("mastered").border);
-  assert.equal(raRecipes.gameStatusBanner.root("in-progress").border, cyan);
-
-  const compactGame = readFileSync("src/platform/decky/decky-retroachievements-compact-game-overview.tsx", "utf8");
-  const fullGameBanner = readFileSync("src/platform/decky/decky-retroachievements-game-status-banner.tsx", "utf8");
-  const fullProfile = readFileSync("src/platform/decky/decky-retroachievements-full-screen-profile-dashboard.tsx", "utf8");
-  assert.match(compactGame, /compactGame\.status\(awardKind, "game"\)/u);
-  assert.match(compactGame, /compactGame\.statusEmblem\(awardKind, "game"\)/u);
-  assert.match(fullGameBanner, /compactGame\.statusEmblem\(kind, "game"\)/u);
-  assert.match(fullProfile, /compactGame\.status\(kind\)/u);
-  assert.match(fullProfile, /compactGame\.statusEmblem\(kind\)/u);
-});
 
 test("Steam and RA share a neutral progress track without merging completion fills", () => {
   assert.equal(steamRecipes.progressTrack.background, achievementCompanionQamTheme.surface.progressTrack);

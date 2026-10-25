@@ -6,6 +6,14 @@ import type {
 import { readDeckyDashboardSnapshotCacheEntry } from "./decky-dashboard-snapshot-cache";
 import { createDeckyGamePageSummaryRevisionStore } from "./decky-game-page-achievement-lifecycle";
 import { subscribeDeckyRaNativeAchievementInvalidation } from "./decky-ra-native-achievement-invalidation";
+import { clearRaHashMappingsForTests, readRaHashMapping, writeRaHashMapping } from "./decky-ra-hash-mapping-cache";
+import {
+  deckyGamePageAchievementBadgeShowsLoadedGames,
+  resolveDeckyGamePageAchievementBadgeUnavailableLabel,
+} from "./decky-game-page-achievement-badge-presentation";
+
+/** Unavailable-summary reason for a ROM whose RetroAchievements game has no achievements yet. */
+export const RA_GAME_WITHOUT_ACHIEVEMENTS_REASON = "ra-game-without-achievements";
 import {
   loadDeckySteamShortcutMetadata,
   loadDeckySteamShortcutRomHashInfo,
@@ -1315,6 +1323,99 @@ async function buildRetroAchievementsReadySummary(
   });
 }
 
+interface RetroAchievementsHashCandidatesResult {
+  readonly apiGameListResult: RetroAchievementsGameListCandidatesLoadResult;
+  readonly hashCandidates: readonly RetroAchievementsApiGameListCandidate[];
+  /** Set when the hash is missing from the achievement catalogue but names a game without achievements. */
+  readonly gameWithoutAchievements?: { readonly gameId: string; readonly title: string };
+}
+
+const retroAchievementsUnfilteredGameListCacheByConsoleId = new Map<
+  string,
+  { readonly storedAt: number; readonly candidates: readonly RetroAchievementsApiGameListCandidate[] }
+>();
+
+// The regular catalogue (f=1) only lists games with achievements. A hash missing from it may
+// still belong to a game that has none yet; that needs the unfiltered, larger list.
+async function findRetroAchievementsGameWithoutAchievements(
+  system: RetroAchievementsResolvedSystemMetadata,
+  romHash: string,
+): Promise<RetroAchievementsApiGameListCandidate | undefined> {
+  let entry = retroAchievementsUnfilteredGameListCacheByConsoleId.get(system.consoleId);
+  if (entry === undefined || Date.now() - entry.storedAt > RETROACHIEVEMENTS_GAME_LIST_CACHE_TTL_MS) {
+    const config = await loadDeckyRetroAchievementsProviderConfig(RETROACHIEVEMENTS_PROVIDER_ID);
+    const client = getRetroAchievementsClient();
+    if (config === undefined || config.hasApiKey !== true || client.loadGameList === undefined) return undefined;
+    try {
+      const response = await client.loadGameList(config, system.consoleId, { includeGamesWithoutAchievements: true });
+      entry = { storedAt: Date.now(), candidates: parseRetroAchievementsGameListCandidates(response, system) };
+    } catch {
+      return undefined;
+    }
+    retroAchievementsUnfilteredGameListCacheByConsoleId.set(system.consoleId, entry);
+  }
+  const matches = collectRetroAchievementsGameListCandidatesForHash(entry.candidates, romHash);
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+// Looks the ROM hash up in the persistent mapping first and only downloads the console's
+// catalogue on a miss. Unambiguous catalogue answers are stored for the next lookup.
+async function resolveRetroAchievementsHashCandidates(
+  platform: string,
+  system: RetroAchievementsResolvedSystemMetadata | undefined,
+  romHash: string,
+): Promise<RetroAchievementsHashCandidatesResult> {
+  if (system !== undefined) {
+    const cached = readRaHashMapping(system.consoleId, romHash);
+    if (cached !== undefined) {
+      const candidates = cached.status === "matched" ? [{ gameId: cached.gameId, title: cached.title }] : [];
+      return {
+        apiGameListResult: { status: "resolved", system, candidates, cacheStatus: "hit" },
+        hashCandidates: candidates,
+        ...(cached.status === "no-achievements"
+          ? { gameWithoutAchievements: { gameId: cached.gameId, title: cached.title } }
+          : {}),
+      };
+    }
+  }
+
+  let apiGameListResult: RetroAchievementsGameListCandidatesLoadResult;
+  try {
+    apiGameListResult = await loadRetroAchievementsGameListCandidatesForPlatform(platform);
+  } catch (error: unknown) {
+    apiGameListResult = {
+      status: "unavailable",
+      normalizedPlatform: platform,
+      candidates: [],
+      reason: error instanceof Error && ["catalogue-incomplete", "catalogue-console-mismatch"].includes(error.message)
+        ? error.message
+        : "catalogue-unavailable",
+    };
+  }
+  if (apiGameListResult.status !== "resolved") {
+    return { apiGameListResult, hashCandidates: [] };
+  }
+
+  const hashCandidates = collectRetroAchievementsGameListCandidatesForHash(apiGameListResult.candidates, romHash);
+  const match = hashCandidates[0];
+  if (hashCandidates.length === 1 && match !== undefined) {
+    writeRaHashMapping(apiGameListResult.system.consoleId, romHash, {
+      status: "matched",
+      gameId: match.gameId,
+      title: match.title,
+    });
+  } else if (hashCandidates.length === 0) {
+    const emptyGame = await findRetroAchievementsGameWithoutAchievements(apiGameListResult.system, romHash);
+    if (emptyGame !== undefined) {
+      const gameWithoutAchievements = { gameId: emptyGame.gameId, title: emptyGame.title };
+      writeRaHashMapping(apiGameListResult.system.consoleId, romHash, { status: "no-achievements", ...gameWithoutAchievements });
+      return { apiGameListResult, hashCandidates, gameWithoutAchievements };
+    }
+    writeRaHashMapping(apiGameListResult.system.consoleId, romHash, { status: "no-match" });
+  }
+  return { apiGameListResult, hashCandidates };
+}
+
 async function attemptRetroAchievementsShortcutHashResolution(
   appId: string,
   shortcutMetadata: DeckySteamShortcutMetadata | undefined,
@@ -1446,19 +1547,11 @@ async function attemptRetroAchievementsShortcutHashResolution(
 
   // A resolved hash can only exist after the platform produced a console ID.
   const resolvedPlatform = shortcutPlatform!;
-  let apiGameListResult: RetroAchievementsGameListCandidatesLoadResult;
-  try {
-    apiGameListResult = await loadRetroAchievementsGameListCandidatesForPlatform(resolvedPlatform);
-  } catch (error: unknown) {
-    apiGameListResult = {
-      status: "unavailable",
-      normalizedPlatform: resolvedPlatform,
-      candidates: [],
-      reason: error instanceof Error && ["catalogue-incomplete", "catalogue-console-mismatch"].includes(error.message)
-        ? error.message
-        : "catalogue-unavailable",
-    };
-  }
+  const { apiGameListResult, hashCandidates, gameWithoutAchievements } = await resolveRetroAchievementsHashCandidates(
+    resolvedPlatform,
+    system,
+    hashInfo.romHash,
+  );
 
   if (apiGameListResult.status === "unsupported") {
     updateAchievementCompanionRaShortcutResolutionDebug({
@@ -1520,10 +1613,6 @@ async function attemptRetroAchievementsShortcutHashResolution(
     };
   }
 
-  const hashCandidates = collectRetroAchievementsGameListCandidatesForHash(
-    apiGameListResult.candidates,
-    hashInfo.romHash,
-  );
   const hashLookupStatus =
     hashCandidates.length === 1 ? "matched" : hashCandidates.length > 1 ? "ambiguous" : "no-match";
   const hashRejectedReason =
@@ -1531,7 +1620,9 @@ async function attemptRetroAchievementsShortcutHashResolution(
       ? undefined
       : hashLookupStatus === "ambiguous"
         ? "ambiguous-hash-match"
-        : "hash-not-in-ra-catalogue";
+        : gameWithoutAchievements !== undefined
+          ? RA_GAME_WITHOUT_ACHIEVEMENTS_REASON
+          : "hash-not-in-ra-catalogue";
   updateAchievementCompanionRaShortcutResolutionDebug({
     appId,
     catalogueSource: "API_GetGameList",
@@ -1943,7 +2034,13 @@ export function formatDeckyGamePageAchievementBadgeLabel(
   }
 
   if (summary?.status === "ready") {
+    if (!deckyGamePageAchievementBadgeShowsLoadedGames()) return undefined;
     return `\u{1f3c6} ${String(summary.earned)} / ${String(summary.total)}`;
+  }
+
+  if (summary.status === "unavailable") {
+    const label = resolveDeckyGamePageAchievementBadgeUnavailableLabel(summary.reason);
+    return label === undefined ? undefined : `${label.title} ${label.detail}`;
   }
 
   if (summary.status !== "loading") {
@@ -2164,6 +2261,22 @@ export function clearDeckyGamePageAchievementSummaryCacheForTests(): void {
   retroAchievementsSystemsInFlight = undefined;
   retroAchievementsGameListCandidatesCacheByPlatform.clear();
   retroAchievementsGameListCandidatesInFlightByPlatform.clear();
+  retroAchievementsUnfilteredGameListCacheByConsoleId.clear();
+  clearRaHashMappingsForTests();
+}
+
+/**
+ * Resolves and stores one shortcut's ROM-hash mapping without loading its achievements, so a
+ * later game page visit can skip the catalogue download.
+ */
+export async function prewarmDeckyRetroAchievementsShortcutMapping(appId: string): Promise<void> {
+  const platform = normalizeRetroAchievementsShortcutPlatform(await loadDeckySteamShortcutMetadata(appId));
+  if (platform === undefined) return;
+  const system = await resolveRetroAchievementsSystemMetadataForPlatform(platform);
+  if (system === undefined) return;
+  const hashInfo = await loadDeckySteamShortcutRomHashInfo(appId, Number(system.consoleId));
+  if (hashInfo?.romHashStatus !== "resolved" || hashInfo.romHash === undefined) return;
+  await resolveRetroAchievementsHashCandidates(platform, system, hashInfo.romHash);
 }
 
 /** Drop a shortcut's cached resolution before a native achievement refresh or identity change. */
@@ -2429,7 +2542,8 @@ export function useGamePageAchievementSummary(
           nextSummary.status === "ready" &&
           nextSummary.provider === "retroachievements" &&
           nextSummary.gameId !== undefined &&
-          nextSummary.completionStatus === undefined
+          nextSummary.completionStatus === undefined &&
+          deckyGamePageAchievementBadgeShowsLoadedGames()
         ) {
           setSummary((current) => selectDeckyGamePageAchievementSummaryDuringLoad(
             current,
@@ -2438,8 +2552,11 @@ export function useGamePageAchievementSummary(
           ));
         }
 
+        // A hidden ready badge needs no completion status; skipping it spares a backend request.
         const presentationSummary =
-          nextSummary.status === "ready" && nextSummary.provider === "retroachievements"
+          nextSummary.status === "ready" &&
+          nextSummary.provider === "retroachievements" &&
+          deckyGamePageAchievementBadgeShowsLoadedGames()
             ? await enrichDeckyGamePageAchievementSummaryCompletionStatus(nextSummary)
             : nextSummary;
         if (!isCurrent()) {

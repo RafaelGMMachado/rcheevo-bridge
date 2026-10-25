@@ -72,6 +72,12 @@ interface RetroAchievementsProviderDependencies {
   readonly subsetVerificationMaxRateLimitRetries?: number;
   /** Injectable timer used by catalogue pacing/backoff tests. */
   readonly sleep?: (milliseconds: number) => Promise<void>;
+  /**
+   * Offered uncached community stats (several extra requests) as a loader instead of loading
+   * them inside loadGameProgress. Returning true takes the loader over and loadGameProgress
+   * answers without the stats; returning false keeps loading them up front.
+   */
+  readonly deferCommunityStats?: (gameId: string, load: () => Promise<GameCommunityStats | undefined>) => boolean;
 }
 
 export type RetroAchievementsSubsetCandidateStatus =
@@ -1216,6 +1222,14 @@ export function createRetroAchievementsProvider(
         rawGameProgress,
         systemIconUrlByConsoleId,
       );
+      const snapshotGameId = iconEnrichedSnapshot.game.gameId;
+      const cachedStats = gameCommunityStatsCache.get(snapshotGameId);
+      if (
+        (cachedStats === undefined || cachedStats.expiresAt <= Date.now()) &&
+        dependencies.deferCommunityStats?.(snapshotGameId, () => loadGameCommunityStats(config, iconEnrichedSnapshot)) === true
+      ) {
+        return iconEnrichedSnapshot;
+      }
       const communityStats = await loadGameCommunityStats(config, iconEnrichedSnapshot);
       return communityStats !== undefined
         ? {

@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    // millennium-ttc resolves "paths" from this file's directory and ignores baseUrl, so baseUrl
+    // points here too and tsc agrees with the bundler.
+    "baseUrl": ".",
+    "skipLibCheck": true,
+    "paths": {
+      "@core/*": ["../../src/core/*"],
+      "@platform/*": ["../../src/platform/*"],
+      "@ui/*": ["../../src/ui/*"],
+      "@decky/ui": ["./compat/decky-ui.ts"],
+      "@decky/api": ["./compat/decky-api.ts"]
+    }
+  },
+  "include": ["./**/*.ts", "./**/*.tsx", "../../src/**/*.ts", "../../src/**/*.tsx"]
+}

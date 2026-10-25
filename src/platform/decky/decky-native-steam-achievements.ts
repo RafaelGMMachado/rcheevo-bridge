@@ -296,6 +296,12 @@ function DeckyNativeGamePageBackBoundary(): ReactElement {
 }
 
 let registeredCleanup: (() => void) | undefined;
+let refreshRegisteredPage: (() => void) | undefined;
+
+/** Re-renders the visible game page after its published projection changed in place. */
+export function refreshDeckyNativeSteamAchievementsPage(): void {
+  refreshRegisteredPage?.();
+}
 
 export function ensureDeckyNativeSteamAchievementsRegistered(): () => void {
   if (registeredCleanup !== undefined) return registeredCleanup;
@@ -781,10 +787,17 @@ export function ensureDeckyNativeSteamAchievementsRegistered(): () => void {
     rerenderActivePage(appId);
   });
 
+  const refresh = () => {
+    notifyAllRevisions();
+    if (activePage !== undefined) rerenderActivePage(activePage.appId);
+  };
+  refreshRegisteredPage = refresh;
+
   const cleanup = () => {
     if (disposed) return;
     disposed = true;
     if (registeredCleanup === cleanup) registeredCleanup = undefined;
+    if (refreshRegisteredPage === refresh) refreshRegisteredPage = undefined;
     unsubscribeInvalidation();
     gameLifetimeHandle?.unregister();
     routerHook.removePatch(DECKY_GAME_PAGE_ACHIEVEMENT_ROUTE_PATTERN, routePatch);

@@ -5,6 +5,8 @@ node_modules/
 dist/
 .tmp/
 bin/ac-rhash
+millennium/.millennium/
+millennium/bin/
 *.tsbuildinfo
 defaults/THIRD_PARTY_NOTICES.md
 

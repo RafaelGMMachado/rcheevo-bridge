@@ -4,6 +4,7 @@ import type {
   AchievementHistorySnapshot,
   CompletionProgressSnapshot,
   DashboardSnapshot,
+  GameCommunityStats,
   GameDetailSnapshot,
   NormalizedGame,
   NormalizedProfile,
@@ -260,10 +261,39 @@ const deckyRetroAchievementsSubsetRelationshipIndexStore: RetroAchievementsSubse
   },
 };
 
+type DeferredCommunityStatsListener = (gameId: string, stats: GameCommunityStats) => void;
+let deferredCommunityStatsListener: DeferredCommunityStatsListener | undefined;
+const pendingCommunityStatsLoads = new Map<string, () => Promise<GameCommunityStats | undefined>>();
+
+/**
+ * Lets RetroAchievements game details load without community stats. They are fetched only when
+ * loadDeferredDeckyRetroAchievementsCommunityStats asks for them, and handed to the listener.
+ * Off by default, so Decky keeps loading them up front.
+ */
+export function deferDeckyRetroAchievementsCommunityStats(listener: DeferredCommunityStatsListener | undefined): void {
+  deferredCommunityStatsListener = listener;
+  if (listener === undefined) pendingCommunityStatsLoads.clear();
+}
+
+/** Starts the community stats load a deferred game detail left behind, if any. */
+export function loadDeferredDeckyRetroAchievementsCommunityStats(gameId: string): void {
+  const load = pendingCommunityStatsLoads.get(gameId);
+  if (load === undefined) return;
+  pendingCommunityStatsLoads.delete(gameId);
+  void load().then((stats) => {
+    if (stats !== undefined) deferredCommunityStatsListener?.(gameId, stats);
+  }, () => undefined);
+}
+
 const providerRegistry = createProviderRegistry([
   createRetroAchievementsProvider({
     transport: deckyAuthenticatedProviderTransportFactory.create(RETROACHIEVEMENTS_PROVIDER_ID),
     subsetRelationshipIndexStore: deckyRetroAchievementsSubsetRelationshipIndexStore,
+    deferCommunityStats: (gameId, load) => {
+      if (deferredCommunityStatsListener === undefined) return false;
+      pendingCommunityStatsLoads.set(gameId, load);
+      return true;
+    },
   }),
   createSteamProvider({
     transport: deckyAuthenticatedProviderTransportFactory.create(STEAM_PROVIDER_ID),

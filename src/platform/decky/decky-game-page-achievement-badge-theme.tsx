@@ -136,6 +136,7 @@ function getProviderIconStyle(
     height: provider === "steam" ? dimensions.steamIcon : dimensions.providerIcon,
     objectFit: "contain",
     ...(variant === "loading" || provider !== "retroachievements" ? { filter: "brightness(0) invert(1)" } : {}),
+    ...(variant === "unavailable" ? { filter: "grayscale(1) opacity(0.7)" } : {}),
   };
 }
 
@@ -153,6 +154,15 @@ function renderStatusIcon(
   }
 
   const shared = { color: palette.accent, filter: `drop-shadow(0 0 5px ${palette.glow})` } satisfies CSSProperties;
+
+  if (variant === "unavailable") {
+    return (
+      <svg data-ac-game-page-badge-status-icon="prohibited" height={dimensions.barsIcon} viewBox="0 0 54 54" width={dimensions.barsIcon} style={shared}>
+        <circle cx="27" cy="27" fill="none" r="20" stroke="currentColor" strokeWidth="6" />
+        <path d="M13 13 41 41" stroke="currentColor" strokeLinecap="round" strokeWidth="6" />
+      </svg>
+    );
+  }
 
   return (
     <svg data-ac-game-page-badge-status-icon="bars" height={dimensions.barsIcon} viewBox="0 0 54 54" width={dimensions.barsIcon} style={shared}>
@@ -280,9 +290,12 @@ export function DeckyGamePageAchievementBadgeVisual({
           {presentation.countLabel}
         </span>
       </span>
-      <span style={getBadgeContentStyle({ display: "grid", placeItems: "center", paddingRight: dimensions.ringPadding })}>
-        {renderProgressRing(presentation, palette, loadingRingRef, dimensions)}
-      </span>
+      {/* No progress to show; the space goes to the longer unavailable text instead. */}
+      {presentation.variant === "unavailable" ? null : (
+        <span style={getBadgeContentStyle({ display: "grid", placeItems: "center", paddingRight: dimensions.ringPadding })}>
+          {renderProgressRing(presentation, palette, loadingRingRef, dimensions)}
+        </span>
+      )}
     </span>
   );
 }

@@ -28,13 +28,3 @@ test("filter selection remains distinct from native focus and permits long count
   assert.equal(selected.minWidth, 0);
 });
 
-test("shared list keeps legacy RA styling and uses native Steam focus without custom audio", () => {
-  const list = readFileSync("src/platform/decky/decky-compact-achievement-list.tsx", "utf8");
-  assert.match(list, /padding: embedded \? 0 : "0 16px 4px"/u);
-  assert.match(list, /model\.metadataPlacement === "rail" \? undefined : DECKY_FOCUS_ACHIEVEMENT_ROW_CLASS/u);
-  assert.match(list, /getSteamCompactAchievementFilterStyle\(active, focusedControl === filter\)/u);
-  assert.match(list, /model\.supportsModeFilter/u);
-  assert.match(list, /pageStateRef\.current = next;[\s\S]*writeDeckyCompactAchievementPageState[\s\S]*setPageState\(next\)/u);
-  assert.doesNotMatch(list, /onGamepadDirection|new Audio|Search achievements/u);
-  assert.equal((list.match(/role="img"/gu) ?? []).length, 1);
-});

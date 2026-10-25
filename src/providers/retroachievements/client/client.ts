@@ -25,6 +25,10 @@ export interface RetroAchievementsClient {
   loadGameList?(
     config: RetroAchievementsProviderConfig,
     consoleId: string,
+    options?: {
+      /** Also list games that have no achievements yet (drops the f=1 filter). */
+      readonly includeGamesWithoutAchievements?: boolean;
+    },
   ): Promise<readonly RawRetroAchievementsGameListEntry[]>;
   loadGameExtended?(
     config: RetroAchievementsProviderConfig,
@@ -178,13 +182,13 @@ export function createRetroAchievementsClient(
       });
     },
 
-    async loadGameList(config, consoleId) {
+    async loadGameList(config, consoleId, options) {
       return transport.requestJson<readonly RawRetroAchievementsGameListEntry[]>({
         path: GAME_LIST_PATH,
         query: {
           ...toAuthQuery(config),
           i: consoleId,
-          f: 1,
+          ...(options?.includeGamesWithoutAchievements === true ? {} : { f: 1 }),
           h: 1,
         },
       });

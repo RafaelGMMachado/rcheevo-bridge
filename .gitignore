@@ -29,6 +29,9 @@ coverage/
 *.bak
 *.local
 
+# Local Claude Code conversation history (personal; never published)
+.claude-history/
+
 # Secrets / local provider config
 .env
 .env.*

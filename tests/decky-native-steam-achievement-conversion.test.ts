@@ -48,6 +48,13 @@ test("Steam boundary shows RA's grey badge for locked achievements", () => {
   assert.equal(toNativeSteamAchievement(locked, "both").strImage, "");
 });
 
+test("Steam boundary lists earned achievements most recent first", () => {
+  const older = { ...earned, achievementId: "1", unlockedAt: 1_700_000_000_000 };
+  const newer = { ...earned, achievementId: "2", unlockedAt: 1_750_000_000_000 };
+  const model = toNativeSteamAchievements([older, locked, newer], "both");
+  assert.deepEqual(model.vecHighlight.map((row) => row.strID), ["ra:2", "ra:1"]);
+});
+
 test("Steam boundary projects mode-specific rarity and earned/locked vectors", () => {
   assert.equal(toNativeSteamAchievement(earned, "hardcore", 1000).flAchieved, 10);
   assert.equal(toNativeSteamAchievement(earned, "softcore", 1000).flAchieved, 15);

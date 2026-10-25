@@ -84,7 +84,10 @@ export function toNativeSteamAchievements(
 ): NativeSteamAchievements {
   const rows = achievements.map((achievement) =>
     toNativeSteamAchievement(achievement, mode, totalPlayers));
-  const unlocked = rows.filter((achievement) => achievement.bAchieved);
+  // Steam lists earned achievements most recent first on the game page.
+  const unlocked = rows
+    .filter((achievement) => achievement.bAchieved)
+    .sort((left, right) => right.rtUnlocked - left.rtUnlocked);
   return {
     nAchieved: unlocked.length,
     nTotal: rows.length,

@@ -17,8 +17,9 @@ recognizes, the game's achievements, unlock history and community stats show up 
 > native-Steam-view integration to Millennium on Windows; see [Credits](#credits).
 > It is an independent project, not affiliated with RetroAchievements, Valve or Millennium.
 
-<!-- Screenshot (hero): Steam achievements tab of a non-Steam shortcut showing RetroAchievements.
-     docs/images/achievements.png -->
+<p align="center">
+  <img src="docs/images/achievements.png" alt="Steam's native achievements view for a Dragon Ball Z: Budokai Tenkaichi 3 emulator shortcut, listing its RetroAchievements set at 153 of 153 unlocked with unlock dates and global unlock rates" width="100%">
+</p>
 
 ## Contents
 

@@ -133,6 +133,30 @@ interface SteamUIWindowInstance {
 // Big Picture's in-game menu panel for a running app's achievements.
 const IN_GAME_ACHIEVEMENTS_ROUTE = /\/app\/(\d+)\/overlay\/achievements\/?$/u;
 
+type JsxFactory = (type: unknown, props: unknown, key?: unknown) => unknown;
+
+interface ReactJsxRuntime {
+  jsx: JsxFactory;
+  jsxs: JsxFactory;
+}
+
+interface SteamTabbedPageProps {
+  readonly tabs: readonly { readonly id?: unknown; readonly content?: { readonly props?: { readonly appid?: unknown } } }[];
+  readonly onShowTab: unknown;
+}
+
+/** Steam's achievements page tabs, which the Achievement Groups plugin extends through jsx. */
+function isSteamAchievementTabsProps(props: unknown): props is SteamTabbedPageProps {
+  if (typeof props !== "object" || props === null) return false;
+  const candidate = props as Partial<SteamTabbedPageProps>;
+  return Array.isArray(candidate.tabs)
+    && typeof candidate.onShowTab === "function"
+    && candidate.tabs.some((tab) => tab?.id === "achievements");
+}
+
+// How often to confirm the jsx patch still wraps any patch another plugin added after it.
+const JSX_PATCH_CHECK_MS = 1000;
+
 interface NativeSteamRuntimeWindow {
   appStore?: {
     GetAppOverviewByAppID(appId: number): SteamAppOverview | null;
@@ -837,6 +861,38 @@ export function ensureDeckyNativeSteamAchievementsRegistered(): () => void {
     communityPatched = true;
   }
 
+  // The Achievement Groups plugin adds a SteamHunters tab to Steam's achievements page, and opens
+  // it first, by patching react/jsx-runtime. SteamHunters has nothing for RA shortcuts, so their
+  // tabs are created straight through React, skipping every jsx patch nested inside this one.
+  const jsxRuntime = findModuleByExport((value: unknown, name?: unknown) =>
+    (name === "jsx" || name === "jsxs") && typeof value === "function") as ReactJsxRuntime | undefined;
+  const jsxPatches = new Map<keyof ReactJsxRuntime, { readonly patch: Patch; readonly patched: JsxFactory }>();
+
+  function keepJsxPatchOutermost(): void {
+    if (disposed || jsxRuntime === undefined) return;
+    for (const name of ["jsx", "jsxs"] as const) {
+      const current = jsxPatches.get(name);
+      if (current !== undefined && jsxRuntime[name] === current.patched) continue;
+      // Another plugin wrapped this patch; move it back on top so it runs first.
+      try {
+        current?.patch.unpatch();
+      } catch {
+        // A nested copy left behind only passes calls through; the new outer patch does the work.
+      }
+      const patch = replacePatch(jsxRuntime, name, (args) => {
+        const [type, props, key] = args as [unknown, unknown, string | number | undefined];
+        if (!isSteamAchievementTabsProps(props)) return callOriginal;
+        const appId = toAppId(props.tabs[0]?.content?.props?.appid);
+        if (appId === undefined || !isShortcutAppId(runtime, appId) || getVisibleModel(appId) === undefined) return callOriginal;
+        return createElement(type as string, key === undefined ? props : { ...props, key });
+      });
+      jsxPatches.set(name, { patch, patched: jsxRuntime[name] });
+    }
+  }
+
+  keepJsxPatchOutermost();
+  const jsxPatchTimer = jsxRuntime === undefined ? undefined : setInterval(keepJsxPatchOutermost, JSX_PATCH_CHECK_MS);
+
   const routePatch = routerHook.addPatch(DECKY_GAME_PAGE_ACHIEVEMENT_ROUTE_PATTERN, (tree) => {
     installStorePatches();
     installPagePatch();
@@ -937,6 +993,9 @@ export function ensureDeckyNativeSteamAchievementsRegistered(): () => void {
     if (refreshRegisteredPage === refresh) refreshRegisteredPage = undefined;
     unsubscribeInvalidation();
     gameLifetimeHandle?.unregister();
+    if (jsxPatchTimer !== undefined) clearInterval(jsxPatchTimer);
+    for (const { patch } of jsxPatches.values()) patch.unpatch();
+    jsxPatches.clear();
     for (const unhook of menuWindowHooks.values()) unhook();
     menuWindowHooks.clear();
     refreshingModels.clear();

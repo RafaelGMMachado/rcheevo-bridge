@@ -47,6 +47,11 @@ function globalPercentage(
   return unlocks === undefined ? 0 : Math.min(100, Math.max(0, (unlocks / totalPlayers) * 100));
 }
 
+// Steam shows a separate grey icon for locked achievements; RA serves one beside every badge.
+function lockedBadgeImageUrl(url: string): string {
+  return url.replace(/(\/Badge\/[^/?#]+?)(?:_lock)?\.png(?=$|[?#])/u, "$1_lock.png");
+}
+
 export function toNativeSteamAchievement(
   achievement: NormalizedAchievement,
   mode: RetroAchievementsAchievementMode,
@@ -56,7 +61,9 @@ export function toNativeSteamAchievement(
     strID: `ra:${achievement.achievementId}`,
     strName: achievement.title,
     strDescription: achievement.description ?? "",
-    strImage: achievement.badgeImageUrl ?? "",
+    strImage: achievement.isUnlocked
+      ? achievement.badgeImageUrl ?? ""
+      : lockedBadgeImageUrl(achievement.badgeImageUrl ?? ""),
     bAchieved: achievement.isUnlocked,
     // The RA game-progress response does not supply a per-achievement hidden flag.
     bHidden: false,

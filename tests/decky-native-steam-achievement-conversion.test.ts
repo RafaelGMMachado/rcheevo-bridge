@@ -42,6 +42,12 @@ test("Steam boundary uses stable RA IDs and preserves artwork, description and u
   assert.equal(row.bHidden, false);
 });
 
+test("Steam boundary shows RA's grey badge for locked achievements", () => {
+  const lockedWithBadge = { ...locked, badgeImageUrl: "https://media.retroachievements.org/Badge/123457.png" };
+  assert.equal(toNativeSteamAchievement(lockedWithBadge, "both").strImage, "https://media.retroachievements.org/Badge/123457_lock.png");
+  assert.equal(toNativeSteamAchievement(locked, "both").strImage, "");
+});
+
 test("Steam boundary projects mode-specific rarity and earned/locked vectors", () => {
   assert.equal(toNativeSteamAchievement(earned, "hardcore", 1000).flAchieved, 10);
   assert.equal(toNativeSteamAchievement(earned, "softcore", 1000).flAchieved, 15);

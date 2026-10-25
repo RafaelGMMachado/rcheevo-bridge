@@ -41,6 +41,7 @@ interface SteamAppOverview {
 
 interface SteamAppDetailsStore {
   GetAchievements(appId: number): unknown;
+  GetAppDetails(appId: number): unknown;
 }
 
 interface SteamAchievementProgressCache {
@@ -111,12 +112,39 @@ interface SteamObservableFactory {
   map: (...args: unknown[]) => unknown;
 }
 
+interface SteamRouterHistory {
+  readonly location?: { readonly pathname?: string };
+  listen(callback: (location: { readonly pathname?: string }) => void): () => void;
+}
+
+interface SteamMenuStore {
+  OpenSideMenu(menu: number): void;
+  GetOpenSideMenu(): number;
+}
+
+// Steam's ESideMenu value for the main (Steam button) menu.
+const STEAM_MAIN_SIDE_MENU = 1;
+
+interface SteamUIWindowInstance {
+  readonly History?: SteamRouterHistory;
+  readonly MenuStore?: SteamMenuStore;
+}
+
+// Big Picture's in-game menu panel for a running app's achievements.
+const IN_GAME_ACHIEVEMENTS_ROUTE = /\/app\/(\d+)\/overlay\/achievements\/?$/u;
+
 interface NativeSteamRuntimeWindow {
   appStore?: {
     GetAppOverviewByAppID(appId: number): SteamAppOverview | null;
   };
   appDetailsStore?: SteamAppDetailsStore;
   appAchievementProgressCache?: SteamAchievementProgressCache;
+  SteamUIStore?: {
+    WindowStore?: {
+      // Main Big Picture window plus the per-game overlay windows that host the in-game menu.
+      readonly SteamUIWindows?: Iterable<SteamUIWindowInstance>;
+    };
+  };
   SteamClient?: {
     GameSessions?: {
       RegisterForAppLifetimeNotifications(callback: (event: { unAppID?: number; bRunning?: boolean }) => void): { unregister(): void };
@@ -374,6 +402,20 @@ export function ensureDeckyNativeSteamAchievementsRegistered(): () => void {
     return model;
   }
 
+  // One stable view per (details, model) so observers comparing by identity do not churn.
+  // Every other field reads through to Steam's live details object.
+  const detailsViews = new WeakMap<object, { readonly model: NativeSteamAchievements; readonly view: object }>();
+
+  function withModelAchievements(details: object, model: NativeSteamAchievements): object {
+    const cached = detailsViews.get(details);
+    if (cached?.model === model) return cached.view;
+    const view = new Proxy(details, {
+      get: (target, property) => property === "achievements" ? model : Reflect.get(target, property),
+    });
+    detailsViews.set(details, { model, view });
+    return view;
+  }
+
   function rerenderActivePage(appId: number): void {
     if (!disposed && activePage?.appId === appId && isCurrentLibraryRootPage(appId)) {
       activePage.instance.forceUpdate?.();
@@ -455,20 +497,90 @@ export function ensureDeckyNativeSteamAchievementsRegistered(): () => void {
     }, 80);
   }
 
-  function loadForPage(appId: number, forceRefresh = false): void {
+  // Achievements shown while an in-game menu refresh reloads them, so the menu entry and its
+  // panel do not vanish mid-refresh. Kept if the refresh fails; replaced once it succeeds.
+  const refreshingModels = new Map<number, NativeSteamAchievements>();
+  const loadingAttempts = new Map<number, object>();
+  const menuWindowHooks = new Map<SteamUIWindowInstance, () => void>();
+
+  function getVisibleModel(appId: number): NativeSteamAchievements | undefined {
+    return getModel(appId) ?? refreshingModels.get(appId);
+  }
+
+  function refreshFromInGameMenu(pathname: string | undefined): void {
+    const appId = toAppId(pathname?.match(IN_GAME_ACHIEVEMENTS_ROUTE)?.[1]);
+    if (disposed || appId === undefined || loadingAttempts.has(appId) || !isShortcutAppId(runtime, appId)) return;
+    // The visible model also covers a previous menu refresh that failed and left only its fallback.
+    const model = getVisibleModel(appId);
+    if (model === undefined) return;
+    console.info("[Rcheevo Bridge] refreshing achievements from the in-game menu", appId);
+    refreshingModels.set(appId, model);
+    attempts.delete(appId);
+    // The player opened the menu to see fresh unlocks, so never reuse a fetch from moments ago.
+    loadForPage(appId, true, true);
+  }
+
+  // Big Picture creates its window lazily, so the listener attaches once its menu queries details.
+  function ensureInGameMenuListener(): void {
+    if (disposed) return;
+    let windows: SteamUIWindowInstance[];
+    try {
+      windows = Array.from(runtime.SteamUIStore?.WindowStore?.SteamUIWindows ?? []);
+    } catch {
+      return;
+    }
+    for (const [instance, unhook] of menuWindowHooks) {
+      if (!windows.includes(instance)) {
+        unhook();
+        menuWindowHooks.delete(instance);
+      }
+    }
+    for (const instance of windows) hookInGameMenuWindow(instance);
+  }
+
+  // A game's in-game menu runs in an overlay window with its own history and menu store.
+  function hookInGameMenuWindow(instance: SteamUIWindowInstance): void {
+    if (menuWindowHooks.has(instance)) return;
+    const history = instance.History;
+    if (history === undefined || typeof history.listen !== "function") return;
+    const unlisten = history.listen((location) => { refreshFromInGameMenu(location?.pathname); });
+    // Closing and reopening the menu keeps the panel's route, so the history listener alone misses it.
+    const menuStore = instance.MenuStore;
+    let menuPatch: Patch | undefined;
+    if (menuStore !== undefined && typeof menuStore.OpenSideMenu === "function" && typeof menuStore.GetOpenSideMenu === "function") {
+      menuPatch = replacePatch(menuStore, "OpenSideMenu", function (this: SteamMenuStore, args) {
+        const wasOpen = menuStore.GetOpenSideMenu() === STEAM_MAIN_SIDE_MENU;
+        menuPatch?.original.call(this, ...args);
+        if (!wasOpen && menuStore.GetOpenSideMenu() === STEAM_MAIN_SIDE_MENU) {
+          refreshFromInGameMenu(history.location?.pathname);
+        }
+        return undefined;
+      });
+    }
+    menuWindowHooks.set(instance, () => {
+      unlisten();
+      menuPatch?.unpatch();
+    });
+  }
+
+  function loadForPage(appId: number, forceRefresh = false, skipRecentReuse = false): void {
     const mode = currentMode();
     if (attempts.get(appId)?.mode === mode) return;
     const attempt = { mode };
     attempts.set(appId, attempt);
     unavailableAppIds.delete(appId);
+    loadingAttempts.set(appId, attempt);
     const page = activePage?.appId === appId ? activePage : undefined;
     void loadDeckyNativeRetroAchievementsProjection(
       String(appId),
       mode,
-      forceRefresh ? { forceRefresh: true } : undefined,
-    ).then((result) => {
+      forceRefresh ? { forceRefresh: true, skipRecentReuse } : undefined,
+    ).finally(() => {
+      if (loadingAttempts.get(appId) === attempt) loadingAttempts.delete(appId);
+    }).then((result) => {
       if (disposed || currentMode() !== mode || attempts.get(appId) !== attempt) return;
       if (result.status === "ready" && result.appId === String(appId)) {
+        refreshingModels.delete(appId);
         managedAppIds.add(appId);
         if (page !== undefined && activePage === page) page.verified = true;
         notifyRevision(appId);
@@ -495,8 +607,22 @@ export function ensureDeckyNativeSteamAchievementsRegistered(): () => void {
       patches.push(replacePatch(detailsStore, "GetAchievements", ([rawAppId]) => {
         const appId = toAppId(rawAppId);
         if (appId === undefined || !isShortcutAppId(runtime, appId)) return callOriginal;
-        return getModel(appId) ?? callOriginal;
+        return getVisibleModel(appId) ?? callOriginal;
       }));
+      // Big Picture's in-game menu lists Achievements only when the app details report a total.
+      if (typeof detailsStore.GetAppDetails === "function") {
+        const appDetailsPatch: Patch = replacePatch(detailsStore, "GetAppDetails", function (this: unknown, args) {
+          const appId = toAppId(args[0]);
+          if (appId === undefined || !isShortcutAppId(runtime, appId)) return callOriginal;
+          ensureInGameMenuListener();
+          revisionFor(appId)?.get();
+          const model = getVisibleModel(appId);
+          if (model === undefined || model.nTotal <= 0) return callOriginal;
+          const details: unknown = appDetailsPatch.original.call(this, ...args);
+          return typeof details === "object" && details !== null ? withModelAchievements(details, model) : details;
+        });
+        patches.push(appDetailsPatch);
+      }
       detailsPatched = true;
     }
     if (!personalPatched && personalStore !== undefined) {
@@ -504,7 +630,7 @@ export function ensureDeckyNativeSteamAchievementsRegistered(): () => void {
         const appId = toAppId(rawAppId);
         if (appId === undefined || !isShortcutAppId(runtime, appId)) return callOriginal;
         revisionFor(appId)?.get();
-        const model = getModel(appId);
+        const model = getVisibleModel(appId);
         if (model === undefined) {
           if (!managedAppIds.has(appId)) return callOriginal;
           if (!unavailableAppIds.has(appId)) {
@@ -519,7 +645,7 @@ export function ensureDeckyNativeSteamAchievementsRegistered(): () => void {
         const appId = toAppId(rawAppId);
         if (appId === undefined || !isShortcutAppId(runtime, appId)) return callOriginal;
         revisionFor(appId)?.get();
-        const model = getModel(appId);
+        const model = getVisibleModel(appId);
         if (model === undefined) {
           if (!managedAppIds.has(appId)) return callOriginal;
           if (!unavailableAppIds.has(appId)) {
@@ -536,7 +662,7 @@ export function ensureDeckyNativeSteamAchievementsRegistered(): () => void {
       patches.push(replacePatch(progressCache, "GetAchievementProgress", ([rawAppId]) => {
         const appId = toAppId(rawAppId);
         if (appId === undefined || !isShortcutAppId(runtime, appId)) return callOriginal;
-        const model = getModel(appId);
+        const model = getVisibleModel(appId);
         if (model !== undefined) return toNativeSteamAchievementProgressPercentage(model);
         return callOriginal;
       }));
@@ -544,7 +670,7 @@ export function ensureDeckyNativeSteamAchievementsRegistered(): () => void {
         patches.push(replacePatch(progressCache, "BGameHasAchievements", ([rawAppId]) => {
           const appId = toAppId(rawAppId);
           if (appId === undefined || !isShortcutAppId(runtime, appId)) return callOriginal;
-          const model = getModel(appId);
+          const model = getVisibleModel(appId);
           if (model !== undefined) return model.nTotal > 0;
           return managedAppIds.has(appId) ? false : callOriginal;
         }));
@@ -770,6 +896,7 @@ export function ensureDeckyNativeSteamAchievementsRegistered(): () => void {
     attempts.clear();
     shortcutIdentities.clear();
     unavailableAppIds.clear();
+    refreshingModels.clear();
     if (activePage !== undefined) activePage.verified = false;
     notifyAllRevisions();
     if (activePage !== undefined) {
@@ -778,7 +905,17 @@ export function ensureDeckyNativeSteamAchievementsRegistered(): () => void {
   });
   const gameLifetimeHandle = runtime.SteamClient?.GameSessions?.RegisterForAppLifetimeNotifications((event) => {
     const appId = toAppId(event.unAppID);
-    if (appId === undefined || event.bRunning !== false || !isShortcutAppId(runtime, appId)) return;
+    if (appId === undefined || !isShortcutAppId(runtime, appId)) return;
+    if (event.bRunning === true) {
+      // A shortcut launched without visiting its game page still needs its achievements for the
+      // Big Picture in-game menu.
+      installStorePatches();
+      ensureInGameMenuListener();
+      if (getModel(appId) === undefined) loadForPage(appId);
+      return;
+    }
+    if (event.bRunning !== false) return;
+    refreshingModels.delete(appId);
     invalidateDeckyNativeRetroAchievementsProjection(String(appId));
     attempts.delete(appId);
     unavailableAppIds.delete(appId);
@@ -800,6 +937,10 @@ export function ensureDeckyNativeSteamAchievementsRegistered(): () => void {
     if (refreshRegisteredPage === refresh) refreshRegisteredPage = undefined;
     unsubscribeInvalidation();
     gameLifetimeHandle?.unregister();
+    for (const unhook of menuWindowHooks.values()) unhook();
+    menuWindowHooks.clear();
+    refreshingModels.clear();
+    loadingAttempts.clear();
     routerHook.removePatch(DECKY_GAME_PAGE_ACHIEVEMENT_ROUTE_PATTERN, routePatch);
     routeRenderPatch?.unpatch();
     routeRenderPatch = undefined;

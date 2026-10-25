@@ -58,18 +58,24 @@ export interface NativeRetroAchievementsProjectionDependencies {
   readonly loadSummary: (appId: string) => Promise<GamePageAchievementSummary>;
   readonly loadDetail: (
     raGameId: string,
-    options: { readonly forceRefresh: boolean },
+    options: { readonly forceRefresh: boolean; readonly skipRecentReuse?: boolean },
   ) => Promise<ResourceState<GameDetailSnapshot>>;
   readonly invalidateSummary: (appId: string, options?: { readonly preserveVisible?: boolean }) => void;
   /** Called once a projection is published and can be shown. */
   readonly onPublished?: (projection: NativeRetroAchievementsProjection) => void;
 }
 
+export interface NativeRetroAchievementsProjectionLoadOptions {
+  readonly forceRefresh?: boolean;
+  /** With forceRefresh, fetches from RA even when a progress fetch from moments ago could be reused. */
+  readonly skipRecentReuse?: boolean;
+}
+
 export interface NativeRetroAchievementsProjectionLoader {
   load(
     appId: string,
     mode: RetroAchievementsAchievementMode,
-    options?: { readonly forceRefresh?: boolean },
+    options?: NativeRetroAchievementsProjectionLoadOptions,
   ): Promise<NativeRetroAchievementsProjectionResult>;
   read(appId: string, mode: RetroAchievementsAchievementMode): NativeRetroAchievementsProjection | undefined;
   invalidate(appId?: string): void;
@@ -201,7 +207,7 @@ export function createNativeRetroAchievementsProjectionLoader(
   async function load(
     appId: string,
     mode: RetroAchievementsAchievementMode,
-    options?: { readonly forceRefresh?: boolean },
+    options?: NativeRetroAchievementsProjectionLoadOptions,
   ): Promise<NativeRetroAchievementsProjectionResult> {
     if (disposed) {
       return unavailable(appId, "disposed");
@@ -276,6 +282,7 @@ export function createNativeRetroAchievementsProjectionLoader(
       try {
         detailState = await dependencies.loadDetail(summary.gameId, {
           forceRefresh: options?.forceRefresh === true || needsFreshDetail.has(appId),
+          ...(options?.skipRecentReuse === true ? { skipRecentReuse: true } : {}),
         });
       } catch {
         return unavailable(appId, "detail-error");
@@ -375,7 +382,7 @@ const deckyDependencies: NativeRetroAchievementsProjectionDependencies = {
   loadSummary: loadDeckyGamePageAchievementSummary,
   async loadDetail(raGameId, options) {
     const { loadDeckyGameDetailState } = await import("./decky-app-services");
-    if (options.forceRefresh) {
+    if (options.forceRefresh && options.skipRecentReuse !== true) {
       // A page visit forces a refresh, but resolving the shortcut moments earlier already
       // fetched this game's progress; reusing it spares a duplicate request on every visit.
       const cached = await loadDeckyGameDetailState(RETROACHIEVEMENTS_PROVIDER_ID, raGameId, { forceRefresh: false });
@@ -388,7 +395,7 @@ const deckyDependencies: NativeRetroAchievementsProjectionDependencies = {
         return cached;
       }
     }
-    return loadDeckyGameDetailState(RETROACHIEVEMENTS_PROVIDER_ID, raGameId, options);
+    return loadDeckyGameDetailState(RETROACHIEVEMENTS_PROVIDER_ID, raGameId, { forceRefresh: options.forceRefresh });
   },
   invalidateSummary: invalidateDeckyGamePageAchievementSummaryCache,
   onPublished: (projection) => projectionPublishedListener?.(projection.raGameId),
@@ -408,7 +415,7 @@ let deckyNativeRetroAchievementsProjectionLoader = createNativeRetroAchievements
 export function loadDeckyNativeRetroAchievementsProjection(
   appId: string,
   mode: RetroAchievementsAchievementMode,
-  options?: { readonly forceRefresh?: boolean },
+  options?: NativeRetroAchievementsProjectionLoadOptions,
 ): Promise<NativeRetroAchievementsProjectionResult> {
   return deckyNativeRetroAchievementsProjectionLoader.load(appId, mode, options);
 }

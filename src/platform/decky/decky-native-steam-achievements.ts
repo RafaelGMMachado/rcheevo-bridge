@@ -112,22 +112,28 @@ interface SteamObservableFactory {
   map: (...args: unknown[]) => unknown;
 }
 
-interface SteamRouterHistory {
-  readonly location?: { readonly pathname?: string };
-  listen(callback: (location: { readonly pathname?: string }) => void): () => void;
+interface SteamRouterLocation {
+  readonly pathname?: string;
+}
+
+// The in-game menu has its own router; this store records each running app's location in it.
+interface SteamMainMenuStore {
+  GetAppControlsLastLocation(appId: number): SteamRouterLocation | undefined;
+  SetAppControlsLastLocation(appId: number, location: SteamRouterLocation): void;
 }
 
 interface SteamMenuStore {
   OpenSideMenu(menu: number): void;
   GetOpenSideMenu(): number;
+  readonly MainMenuStore?: SteamMainMenuStore;
 }
 
 // Steam's ESideMenu value for the main (Steam button) menu.
 const STEAM_MAIN_SIDE_MENU = 1;
 
 interface SteamUIWindowInstance {
-  readonly History?: SteamRouterHistory;
   readonly MenuStore?: SteamMenuStore;
+  readonly MainRunningAppID?: number;
 }
 
 // Big Picture's in-game menu panel for a running app's achievements.
@@ -537,7 +543,6 @@ export function ensureDeckyNativeSteamAchievementsRegistered(): () => void {
     // The visible model also covers a previous menu refresh that failed and left only its fallback.
     const model = getVisibleModel(appId);
     if (model === undefined) return;
-    console.info("[Rcheevo Bridge] refreshing achievements from the in-game menu", appId);
     refreshingModels.set(appId, model);
     attempts.delete(appId);
     // The player opened the menu to see fresh unlocks, so never reuse a fetch from moments ago.
@@ -562,28 +567,36 @@ export function ensureDeckyNativeSteamAchievementsRegistered(): () => void {
     for (const instance of windows) hookInGameMenuWindow(instance);
   }
 
-  // A game's in-game menu runs in an overlay window with its own history and menu store.
+  // Hooks a Big Picture window's in-game menu: navigating to its Achievements panel, and reopening
+  // the menu while the panel is shown, both refresh the running app's achievements.
   function hookInGameMenuWindow(instance: SteamUIWindowInstance): void {
     if (menuWindowHooks.has(instance)) return;
-    const history = instance.History;
-    if (history === undefined || typeof history.listen !== "function") return;
-    const unlisten = history.listen((location) => { refreshFromInGameMenu(location?.pathname); });
-    // Closing and reopening the menu keeps the panel's route, so the history listener alone misses it.
     const menuStore = instance.MenuStore;
-    let menuPatch: Patch | undefined;
-    if (menuStore !== undefined && typeof menuStore.OpenSideMenu === "function" && typeof menuStore.GetOpenSideMenu === "function") {
-      menuPatch = replacePatch(menuStore, "OpenSideMenu", function (this: SteamMenuStore, args) {
-        const wasOpen = menuStore.GetOpenSideMenu() === STEAM_MAIN_SIDE_MENU;
-        menuPatch?.original.call(this, ...args);
-        if (!wasOpen && menuStore.GetOpenSideMenu() === STEAM_MAIN_SIDE_MENU) {
-          refreshFromInGameMenu(history.location?.pathname);
-        }
-        return undefined;
-      });
-    }
+    const mainMenuStore = menuStore?.MainMenuStore;
+    if (menuStore === undefined || mainMenuStore === undefined
+      || typeof menuStore.OpenSideMenu !== "function" || typeof menuStore.GetOpenSideMenu !== "function"
+      || typeof mainMenuStore.GetAppControlsLastLocation !== "function"
+      || typeof mainMenuStore.SetAppControlsLastLocation !== "function") return;
+    // The menu's own router reports every navigation here, so the window history never sees it.
+    const locationPatch: Patch = replacePatch(mainMenuStore, "SetAppControlsLastLocation", function (this: SteamMainMenuStore, args) {
+      locationPatch.original.call(this, ...args);
+      const [, location] = args as [number, SteamRouterLocation | undefined];
+      refreshFromInGameMenu(location?.pathname);
+      return undefined;
+    });
+    // Closing and reopening the menu keeps the panel's route, so no navigation is reported then.
+    const menuPatch: Patch = replacePatch(menuStore, "OpenSideMenu", function (this: SteamMenuStore, args) {
+      const wasOpen = menuStore.GetOpenSideMenu() === STEAM_MAIN_SIDE_MENU;
+      menuPatch.original.call(this, ...args);
+      if (wasOpen || menuStore.GetOpenSideMenu() !== STEAM_MAIN_SIDE_MENU) return undefined;
+      const appId = instance.MainRunningAppID;
+      const pathname = appId === undefined ? undefined : mainMenuStore.GetAppControlsLastLocation(appId)?.pathname;
+      refreshFromInGameMenu(pathname);
+      return undefined;
+    });
     menuWindowHooks.set(instance, () => {
-      unlisten();
-      menuPatch?.unpatch();
+      locationPatch.unpatch();
+      menuPatch.unpatch();
     });
   }
 

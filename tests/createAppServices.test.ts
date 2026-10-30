@@ -9311,6 +9311,9 @@ test("decky retroachievements platform labels normalize common SRM and canonical
   assert.equal(normalizeRetroAchievementsPlatformLabel("Nintendo NES"), "NES/Famicom");
   assert.equal(normalizeRetroAchievementsPlatformLabel("Nintendo Game Boy"), "Game Boy");
   assert.equal(normalizeRetroAchievementsPlatformLabel("Nintendo Game Boy Advance"), "Game Boy Advance");
+  assert.equal(normalizeRetroAchievementsPlatformLabel("Nintendo Game Boy Advance - mGBA"), "Game Boy Advance");
+  assert.equal(normalizeRetroAchievementsPlatformLabel("Sony PlayStation 2 - PCSX2"), "PlayStation 2");
+  assert.equal(normalizeRetroAchievementsPlatformLabel("Nintendo Switch - Ryujinx"), "Nintendo Switch - Ryujinx");
   assert.equal(normalizeRetroAchievementsPlatformLabel("Nintendo Game Boy Color"), "Game Boy Color");
   assert.equal(normalizeRetroAchievementsPlatformLabel("Nintendo GameCube"), "GameCube");
   assert.equal(normalizeRetroAchievementsPlatformLabel("Nintendo 64"), "Nintendo 64");

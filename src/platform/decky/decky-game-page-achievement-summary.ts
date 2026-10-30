@@ -848,6 +848,18 @@ export function normalizeRetroAchievementsPlatformLabel(value: string | undefine
     return alias;
   }
 
+  // EmuDeck's Steam ROM Manager names some categories "<platform> - <emulator>", such as
+  // "Nintendo Game Boy Advance - mGBA"; the platform alone is the alias.
+  const emulatorSeparator = trimmed.indexOf(" - ");
+  if (emulatorSeparator > 0) {
+    const platformAlias = RETROACHIEVEMENTS_PLATFORM_LABEL_ALIASES.get(
+      normalizeRetroAchievementsPlatformAliasKey(trimmed.slice(0, emulatorSeparator)),
+    );
+    if (platformAlias !== undefined) {
+      return platformAlias;
+    }
+  }
+
   return trimmed;
 }
 
